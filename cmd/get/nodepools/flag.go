@@ -7,12 +7,12 @@ import (
 
 const (
 	flagAllNamespaces = "all-namespaces"
-	flagClusterID     = "cluster-id"
+	flagClusterName   = "cluster-name"
 )
 
 type flag struct {
 	AllNamespaces bool
-	ClusterID     string
+	ClusterName   string
 
 	config genericclioptions.RESTClientGetter
 	print  *genericclioptions.PrintFlags
@@ -20,7 +20,7 @@ type flag struct {
 
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&f.AllNamespaces, flagAllNamespaces, "A", false, "If present, list the requested object(s) across all namespaces. Namespace in current context is ignored even if specified with --namespace.")
-	cmd.Flags().StringVarP(&f.ClusterID, flagClusterID, "c", "", "If present, list the node pools that belong to the given workload cluster.")
+	cmd.Flags().StringVarP(&f.ClusterName, flagClusterName, "c", "", "Only show node pools of the cluster with this name")
 
 	f.config = genericclioptions.NewConfigFlags(true)
 	f.print = genericclioptions.NewPrintFlags("")

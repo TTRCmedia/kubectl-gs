@@ -4,11 +4,13 @@ import (
 	"context"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/giantswarm/apiextensions/v3/pkg/id"
 
 	"github.com/giantswarm/kubectl-gs/cmd/template/nodepool/provider"
 	"github.com/giantswarm/kubectl-gs/internal/key"
+	"github.com/giantswarm/kubectl-gs/pkg/commonconfig"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -50,28 +52,45 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		config = provider.NodePoolCRsConfig{
 			AWSInstanceType:                     r.flag.AWSInstanceType,
 			FileName:                            nodePoolCRFileName,
-			ClusterID:                           r.flag.ClusterID,
-			Description:                         r.flag.NodepoolName,
+			ClusterName:                         r.flag.ClusterName,
+			Description:                         r.flag.Description,
 			VMSize:                              r.flag.AzureVMSize,
+			AzureUseSpotVms:                     r.flag.AzureUseSpotVms,
+			AzureSpotMaxPrice:                   r.flag.AzureSpotVMsMaxPrice,
+			MachineDeploymentSubnet:             r.flag.MachineDeploymentSubnet,
 			NodesMax:                            r.flag.NodesMax,
 			NodesMin:                            r.flag.NodesMin,
 			OnDemandBaseCapacity:                r.flag.OnDemandBaseCapacity,
 			OnDemandPercentageAboveBaseCapacity: r.flag.OnDemandPercentageAboveBaseCapacity,
-			Owner:                               r.flag.Owner,
+			Organization:                        r.flag.Organization,
+			ReleaseVersion:                      r.flag.Release,
 			UseAlikeInstanceTypes:               r.flag.UseAlikeInstanceTypes,
+			EKS:                                 r.flag.EKS,
 		}
 
 		if config.NodePoolID == "" {
 			config.NodePoolID = id.Generate()
 		}
 
+		// Remove leading 'v' from release flag input.
+		config.ReleaseVersion = strings.TrimLeft(config.ReleaseVersion, "v")
+
 		if len(r.flag.AvailabilityZones) > 0 {
 			config.AvailabilityZones = r.flag.AvailabilityZones
 		}
 
 		if r.flag.Provider == key.ProviderAzure {
-			config.Namespace = key.OrganizationNamespaceFromName(config.Owner)
+			config.Namespace = key.OrganizationNamespaceFromName(config.Organization)
 		}
+		if r.flag.Provider == key.ProviderAWS {
+			config.Namespace = r.flag.ClusterNamespace
+		}
+	}
+
+	commonConfig := commonconfig.New(r.flag.config)
+	c, err := commonConfig.GetClient(r.logger)
+	if err != nil {
+		return microerror.Mask(err)
 	}
 
 	var output *os.File
@@ -91,12 +110,12 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	switch r.flag.Provider {
 	case key.ProviderAWS:
-		err = provider.WriteAWSTemplate(output, config)
+		err = provider.WriteAWSTemplate(ctx, c.K8sClient, output, config)
 		if err != nil {
 			return microerror.Mask(err)
 		}
 	case key.ProviderAzure:
-		err = provider.WriteAzureTemplate(output, config)
+		err = provider.WriteAzureTemplate(ctx, c.K8sClient, output, config)
 		if err != nil {
 			return microerror.Mask(err)
 		}

@@ -1,33 +1,75 @@
 package provider
 
 import (
+	"context"
 	"io"
 	"text/template"
 
-	"github.com/giantswarm/apiextensions/v3/pkg/apis/infrastructure/v1alpha2"
+	"github.com/giantswarm/apiextensions/v3/pkg/annotation"
+	"github.com/giantswarm/k8sclient/v5/pkg/k8sclient"
 	"github.com/giantswarm/microerror"
 	"sigs.k8s.io/yaml"
 
+	"github.com/giantswarm/kubectl-gs/cmd/template/cluster/provider/templates/aws"
 	"github.com/giantswarm/kubectl-gs/internal/key"
 )
 
-func WriteAWSTemplate(out io.Writer, config ClusterCRsConfig) error {
+func WriteAWSTemplate(ctx context.Context, client k8sclient.Interface, out io.Writer, config ClusterCRsConfig) error {
 	var err error
 
-	crsConfig := v1alpha2.ClusterCRsConfig{
-		ClusterID:      config.ClusterID,
+	isCapiVersion, err := key.IsCAPIVersion(config.ReleaseVersion)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	if isCapiVersion {
+		if config.EKS {
+			err = WriteCAPAEKSTemplate(ctx, client, out, config)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+		} else {
+			err = WriteCAPATemplate(ctx, client, out, config)
+			if err != nil {
+				return microerror.Mask(err)
+			}
+		}
+	} else {
+		err = WriteGSAWSTemplate(out, config)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+	}
+
+	return nil
+}
+
+func WriteGSAWSTemplate(out io.Writer, config ClusterCRsConfig) error {
+	var err error
+
+	crsConfig := aws.ClusterCRsConfig{
+		ClusterID: config.Name,
+
 		ExternalSNAT:   config.ExternalSNAT,
-		MasterAZ:       config.MasterAZ,
+		MasterAZ:       config.ControlPlaneAZ,
 		Description:    config.Description,
 		PodsCIDR:       config.PodsCIDR,
-		Owner:          config.Owner,
+		Owner:          config.Organization,
 		ReleaseVersion: config.ReleaseVersion,
 		Labels:         config.Labels,
 	}
 
-	crs, err := v1alpha2.NewClusterCRs(crsConfig)
+	crs, err := aws.NewClusterCRs(crsConfig)
 	if err != nil {
 		return microerror.Mask(err)
+	}
+
+	if config.ControlPlaneSubnet != "" {
+		crs.AWSCluster.Annotations[annotation.AWSSubnetSize] = config.ControlPlaneSubnet
+	}
+
+	if key.IsOrgNamespaceVersion(config.ReleaseVersion) {
+		crs = moveCRsToOrgNamespace(crs, config.Organization)
 	}
 
 	clusterCRYaml, err := yaml.Marshal(crs.Cluster)
@@ -69,4 +111,14 @@ func WriteAWSTemplate(out io.Writer, config ClusterCRsConfig) error {
 	}
 
 	return nil
+}
+
+func moveCRsToOrgNamespace(crs aws.ClusterCRs, organization string) aws.ClusterCRs {
+	crs.Cluster.SetNamespace(key.OrganizationNamespaceFromName(organization))
+	crs.Cluster.Spec.InfrastructureRef.Namespace = key.OrganizationNamespaceFromName(organization)
+	crs.AWSCluster.SetNamespace(key.OrganizationNamespaceFromName(organization))
+	crs.G8sControlPlane.SetNamespace(key.OrganizationNamespaceFromName(organization))
+	crs.G8sControlPlane.Spec.InfrastructureRef.Namespace = key.OrganizationNamespaceFromName(organization)
+	crs.AWSControlPlane.SetNamespace(key.OrganizationNamespaceFromName(organization))
+	return crs
 }

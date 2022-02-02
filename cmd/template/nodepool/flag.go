@@ -2,9 +2,11 @@ package nodepool
 
 import (
 	"fmt"
+	"regexp"
 
 	"github.com/giantswarm/microerror"
 	"github.com/spf13/cobra"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
 
 	"github.com/giantswarm/kubectl-gs/internal/key"
 )
@@ -14,23 +16,27 @@ const (
 
 	// AWS only.
 	flagAWSInstanceType                     = "aws-instance-type"
+	flagMachineDeploymentSubnet             = "machine-deployment-subnet"
 	flagOnDemandBaseCapacity                = "on-demand-base-capacity"
 	flagOnDemandPercentageAboveBaseCapacity = "on-demand-percentage-above-base-capacity"
 	flagUseAlikeInstanceTypes               = "use-alike-instance-types"
+	flagEKS                                 = "aws-eks"
+	flagClusterNamespace                    = "aws-cluster-namespace"
 
 	// Azure only.
-	flagAzureVMSize = "azure-vm-size"
+	flagAzureVMSize          = "azure-vm-size"
+	flagAzureUseSpotVMs      = "azure-spot-vms"
+	flagAzureSpotVMsMaxPrice = "azure-spot-vms-max-price"
 
 	// Common.
 	flagAvailabilityZones = "availability-zones"
-	flagClusterID         = "cluster-id"
-	flagNodepoolName      = "nodepool-name"
+	flagClusterName       = "cluster-name"
+	flagDescription       = "description"
 	flagNodesMax          = "nodes-max"
 	flagNodesMin          = "nodes-min"
-	flagNodexMax          = "nodex-max"
-	flagNodexMin          = "nodex-min"
 	flagOutput            = "output"
-	flagOwner             = "owner"
+	flagOrganization      = "organization"
+	flagRelease           = "release"
 )
 
 const (
@@ -43,26 +49,30 @@ type flag struct {
 
 	// AWS only.
 	AWSInstanceType                     string
+	MachineDeploymentSubnet             string
 	OnDemandBaseCapacity                int
 	OnDemandPercentageAboveBaseCapacity int
 	UseAlikeInstanceTypes               bool
+	EKS                                 bool
+	ClusterNamespace                    string
 
 	// Azure only.
-	AzureVMSize string
+	AzureVMSize          string
+	AzureUseSpotVms      bool
+	AzureSpotVMsMaxPrice float32
 
 	// Common.
 	AvailabilityZones []string
-	ClusterID         string
-	NodepoolName      string
+	ClusterName       string
+	Description       string
 	NodesMax          int
 	NodesMin          int
 	Output            string
-	Owner             string
+	Organization      string
+	Release           string
 
-	// Deprecated
-	// Can be removed in a future version around March 2021 or later.
-	NodexMin int
-	NodexMax int
+	config genericclioptions.RESTClientGetter
+	print  *genericclioptions.PrintFlags
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -70,27 +80,39 @@ func (f *flag) Init(cmd *cobra.Command) {
 
 	// AWS only.
 	cmd.Flags().StringVar(&f.AWSInstanceType, flagAWSInstanceType, "m5.xlarge", "EC2 instance type to use for workers, e. g. 'm5.2xlarge'.")
-	cmd.Flags().IntVar(&f.OnDemandBaseCapacity, flagOnDemandBaseCapacity, 0, "Number of base capacity for On demand instance distribution. Default is 0.")
-	cmd.Flags().IntVar(&f.OnDemandPercentageAboveBaseCapacity, flagOnDemandPercentageAboveBaseCapacity, 100, "Percentage above base capacity for On demand instance distribution. Default is 100.")
-	cmd.Flags().BoolVar(&f.UseAlikeInstanceTypes, flagUseAlikeInstanceTypes, false, "Whether to use similar instances types as a fallback.")
+	cmd.Flags().StringVar(&f.MachineDeploymentSubnet, flagMachineDeploymentSubnet, "", "Subnet used for the Node Pool.")
+	cmd.Flags().IntVar(&f.OnDemandBaseCapacity, flagOnDemandBaseCapacity, 0, "Number of base capacity for On demand instance distribution. Default is 0. Only available on AWS.")
+	cmd.Flags().IntVar(&f.OnDemandPercentageAboveBaseCapacity, flagOnDemandPercentageAboveBaseCapacity, 100, "Percentage above base capacity for On demand instance distribution. Default is 100. Only available on AWS.")
+	cmd.Flags().BoolVar(&f.UseAlikeInstanceTypes, flagUseAlikeInstanceTypes, false, "Whether to use similar instances types as a fallback. Only available on AWS.")
+	cmd.Flags().BoolVar(&f.EKS, flagEKS, false, "Enable AWSEKS. Only available for AWS Release v20.0.0 (CAPA)")
+	cmd.Flags().StringVar(&f.ClusterNamespace, flagClusterNamespace, "", "Namespace of the cluster to add the node pool to. Defaults to the organization namespace from v16.0.0 and to `default` before.")
 
 	// Azure only.
 	cmd.Flags().StringVar(&f.AzureVMSize, flagAzureVMSize, "Standard_D4s_v3", "Azure VM size to use for workers, e.g. 'Standard_D4s_v3'.")
+	cmd.Flags().BoolVar(&f.AzureUseSpotVms, flagAzureUseSpotVMs, false, "Whether to use Spot VMs for this Node Pool. Defaults to false. Only available on Azure.")
+	cmd.Flags().Float32Var(&f.AzureSpotVMsMaxPrice, flagAzureSpotVMsMaxPrice, 0, "Max hourly price in USD to pay for one spot VM on Azure. If not set, the on-demand price is used as the limit.")
 
 	// Common.
 	cmd.Flags().StringSliceVar(&f.AvailabilityZones, flagAvailabilityZones, []string{}, "List of availability zones to use, instead of setting a number. Use comma to separate values.")
-	cmd.Flags().StringVar(&f.ClusterID, flagClusterID, "", "Workload cluster ID.")
-	cmd.Flags().StringVar(&f.NodepoolName, flagNodepoolName, "Unnamed node pool", "NodepoolName or purpose description of the node pool.")
+	cmd.Flags().StringVar(&f.ClusterName, flagClusterName, "", "Name of the cluster to add the node pool to.")
+	cmd.Flags().StringVar(&f.Description, flagDescription, "", "User-friendly description of the node pool's purpose.")
 	cmd.Flags().IntVar(&f.NodesMax, flagNodesMax, maxNodes, fmt.Sprintf("Maximum number of worker nodes for the node pool. (default %d)", maxNodes))
 	cmd.Flags().IntVar(&f.NodesMin, flagNodesMin, minNodes, fmt.Sprintf("Minimum number of worker nodes for the node pool. (default %d)", minNodes))
 	cmd.Flags().StringVar(&f.Output, flagOutput, "", "File path for storing CRs. (default: stdout)")
-	cmd.Flags().StringVar(&f.Owner, flagOwner, "", "Workload cluster owner organization.")
+	cmd.Flags().StringVar(&f.Organization, flagOrganization, "", "Workload cluster organization.")
+	cmd.Flags().StringVar(&f.Release, flagRelease, "", "Workload cluster release.")
 
-	// This can be removed in a future version around March 2021 or later.
-	cmd.Flags().IntVar(&f.NodexMax, flagNodexMax, 0, "")
-	cmd.Flags().IntVar(&f.NodexMin, flagNodexMin, 0, "")
-	_ = cmd.Flags().MarkDeprecated(flagNodexMax, "")
-	_ = cmd.Flags().MarkDeprecated(flagNodexMin, "")
+	// TODO: Make this flag visible when we roll CAPA/EKS out for customers
+	_ = cmd.Flags().MarkHidden(flagEKS)
+
+	f.config = genericclioptions.NewConfigFlags(true)
+	f.print = genericclioptions.NewPrintFlags("")
+	f.print.OutputFormat = nil
+
+	// Merging current command flags and config flags,
+	// to be able to override kubectl-specific ones.
+	f.config.(*genericclioptions.ConfigFlags).AddFlags(cmd.Flags())
+	f.print.AddFlags(cmd)
 }
 
 func (f *flag) Validate() error {
@@ -112,21 +134,21 @@ func (f *flag) Validate() error {
 		}
 	}
 
-	if f.ClusterID == "" {
-		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagClusterID)
+	if f.MachineDeploymentSubnet != "" {
+		matchedSubnet, err := regexp.MatchString("^20|21|22|23|24|25|26|27|28$", f.MachineDeploymentSubnet)
+		if err == nil && !matchedSubnet {
+			return microerror.Maskf(invalidFlagError, "--%s must be a valid subnet size (20, 21, 22, 23, 24,25, 26, 27 or 28)", flagMachineDeploymentSubnet)
+		}
 	}
-	if f.NodepoolName == "" {
-		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagNodepoolName)
+
+	if f.ClusterName == "" {
+		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagClusterName)
+	}
+	if f.Description == "" {
+		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagDescription)
 	}
 
 	{
-		if f.NodexMin > 0 {
-			return microerror.Maskf(invalidFlagError, "please use --nodes-min instead of --nodex-min")
-		}
-		if f.NodexMax > 0 {
-			return microerror.Maskf(invalidFlagError, "please use --nodes-max instead of --nodex-max")
-		}
-
 		// Validate scaling.
 		if f.NodesMax < 0 {
 			return microerror.Maskf(invalidFlagError, "--%s must be >= 0", flagNodesMax)
@@ -139,8 +161,12 @@ func (f *flag) Validate() error {
 		}
 	}
 
-	if f.Owner == "" {
-		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagOwner)
+	if f.Organization == "" {
+		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagOrganization)
+	}
+
+	if f.Release == "" {
+		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagRelease)
 	}
 
 	{

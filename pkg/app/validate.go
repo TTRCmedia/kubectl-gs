@@ -14,8 +14,7 @@ import (
 
 	"github.com/giantswarm/kubectl-gs/pkg/data/domain/app"
 	appdata "github.com/giantswarm/kubectl-gs/pkg/data/domain/app"
-	"github.com/giantswarm/kubectl-gs/pkg/data/domain/appcatalog"
-	appcatalogdata "github.com/giantswarm/kubectl-gs/pkg/data/domain/appcatalog"
+	catalogdata "github.com/giantswarm/kubectl-gs/pkg/data/domain/catalog"
 	"github.com/giantswarm/kubectl-gs/pkg/helmbinary"
 )
 
@@ -135,12 +134,14 @@ func (s *Service) validateMultiple(ctx context.Context, namespace string, labelS
 			continue
 		}
 
-		// Append the result to the results array.
-		results = append(results, &ValidationResult{
-			App:              app,
-			ValuesSchema:     valuesSchema,
-			ValidationErrors: schemaValidationResult.Errors(),
-		})
+		// Append the result to the results array if there are any.
+		if schemaValidationResult != nil {
+			results = append(results, &ValidationResult{
+				App:              app,
+				ValuesSchema:     valuesSchema,
+				ValidationErrors: schemaValidationResult.Errors(),
+			})
+		}
 	}
 
 	return results, nil
@@ -148,9 +149,10 @@ func (s *Service) validateMultiple(ctx context.Context, namespace string, labelS
 
 func (s *Service) validateApp(ctx context.Context, app *applicationv1alpha1.App, customValuesSchema string) (string, *gojsonschema.Result, error) {
 	catalogName := app.Spec.Catalog
+	catalogNamespace := app.Spec.CatalogNamespace
 
 	// Fetch the catalog's index.yaml if we haven't tried to yet.
-	index, catalog, err := s.fetchCatalogIndex(ctx, catalogName)
+	index, catalog, err := s.fetchCatalogIndex(ctx, catalogName, catalogNamespace)
 	if err != nil {
 		return "", nil, microerror.Mask(err)
 	}
@@ -263,7 +265,7 @@ func (s *Service) fetchValuesSchema(entries ChartVersions, version string) (stri
 	return string(body), nil
 }
 
-func (s *Service) fetchCatalogIndex(ctx context.Context, catalogName string) (*IndexFile, *applicationv1alpha1.AppCatalog, error) {
+func (s *Service) fetchCatalogIndex(ctx context.Context, catalogName, catalogNamespace string) (*IndexFile, *applicationv1alpha1.Catalog, error) {
 	var err error
 
 	// Don't try to fetch something that is undefined.
@@ -277,13 +279,14 @@ func (s *Service) fetchCatalogIndex(ctx context.Context, catalogName string) (*I
 	}
 
 	// Fetch the catalog.
-	options := appcatalogdata.GetOptions{
-		Name: catalogName,
+	options := catalogdata.GetOptions{
+		Name:      catalogName,
+		Namespace: catalogNamespace,
 	}
 
-	catalogResource, err := s.appcatalogDataService.Get(ctx, options)
+	catalogResource, err := s.catalogDataService.Get(ctx, options)
 	if err != nil {
-		err = microerror.Maskf(fetchError, "unable to fetch AppCatalog: %s", err.Error())
+		err = microerror.Maskf(fetchError, "unable to fetch Catalog: %s", err.Error())
 		s.catalogFetchResults[catalogName] = CatalogFetchResult{
 			err: err,
 		}
@@ -291,10 +294,10 @@ func (s *Service) fetchCatalogIndex(ctx context.Context, catalogName string) (*I
 		return nil, nil, err
 	}
 
-	var catalog *applicationv1alpha1.AppCatalog
+	var catalog *applicationv1alpha1.Catalog
 
 	switch c := catalogResource.(type) {
-	case *appcatalog.AppCatalog:
+	case *catalogdata.Catalog:
 		catalog = c.CR
 	default:
 		return nil, nil, microerror.Maskf(invalidTypeError, "unexpected type %T found", c)

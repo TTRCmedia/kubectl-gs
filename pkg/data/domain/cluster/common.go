@@ -2,8 +2,12 @@ package cluster
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/giantswarm/microerror"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/giantswarm/kubectl-gs/internal/key"
 )
@@ -12,8 +16,8 @@ func (s *Service) Get(ctx context.Context, options GetOptions) (Resource, error)
 	var resource Resource
 	var err error
 
-	if len(options.ID) > 0 {
-		resource, err = s.getById(ctx, options.Provider, options.ID, options.Namespace)
+	if len(options.Name) > 0 {
+		resource, err = s.getByName(ctx, options.Provider, options.Name, options.Namespace)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -27,20 +31,20 @@ func (s *Service) Get(ctx context.Context, options GetOptions) (Resource, error)
 	return resource, nil
 }
 
-func (s *Service) getById(ctx context.Context, provider, id, namespace string) (Resource, error) {
+func (s *Service) getByName(ctx context.Context, provider, name, namespace string) (Resource, error) {
 	var err error
 
 	var cluster Resource
 	{
 		switch provider {
 		case key.ProviderAWS:
-			cluster, err = s.getByIdAWS(ctx, id, namespace)
+			cluster, err = s.getByNameAWS(ctx, name, namespace)
 			if err != nil {
 				return nil, microerror.Mask(err)
 			}
 
 		case key.ProviderAzure:
-			cluster, err = s.getByIdAzure(ctx, id, namespace)
+			cluster, err = s.getByNameAzure(ctx, name, namespace)
 			if err != nil {
 				return nil, microerror.Mask(err)
 			}
@@ -77,4 +81,20 @@ func (s *Service) getAll(ctx context.Context, provider, namespace string) (Resou
 	}
 
 	return clusterCollection, nil
+}
+
+func (s *Service) Patch(ctx context.Context, object runtime.Object, options PatchOptions) error {
+	var err error
+
+	bytes, err := json.Marshal(options.PatchSpecs)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	err = s.client.K8sClient.CtrlClient().Patch(ctx, object, client.RawPatch(types.JSONPatchType, bytes))
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	return nil
 }

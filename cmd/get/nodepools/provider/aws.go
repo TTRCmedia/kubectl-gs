@@ -11,14 +11,15 @@ import (
 	"github.com/giantswarm/kubectl-gs/internal/feature"
 	"github.com/giantswarm/kubectl-gs/internal/key"
 	"github.com/giantswarm/kubectl-gs/pkg/data/domain/nodepool"
+	"github.com/giantswarm/kubectl-gs/pkg/output"
 )
 
 func GetAWSTable(npResource nodepool.Resource, capabilities *feature.Service) *metav1.Table {
 	table := &metav1.Table{
 		ColumnDefinitions: []metav1.TableColumnDefinition{
-			{Name: "ID", Type: "string"},
-			{Name: "Cluster ID", Type: "string"},
-			{Name: "Created", Type: "string", Format: "date-time"},
+			{Name: "Name", Type: "string"},
+			{Name: "Cluster Name", Type: "string"},
+			{Name: "Age", Type: "string", Format: "date-time"},
 			{Name: "Condition", Type: "string"},
 			{Name: "Nodes Min/Max", Type: "string"},
 			{Name: "Nodes Desired", Type: "integer"},
@@ -31,18 +32,18 @@ func GetAWSTable(npResource nodepool.Resource, capabilities *feature.Service) *m
 	case *nodepool.Nodepool:
 		table.Rows = append(table.Rows, getAWSNodePoolRow(*n, capabilities))
 	case *nodepool.Collection:
-		// Sort ASC by Cluster ID.
+		// Sort ASC by Cluster name.
 		sort.Slice(n.Items, func(i, j int) bool {
-			var iClusterID, jClusterID string
+			var iClusterName, jClusterName string
 
 			if n.Items[i].MachineDeployment != nil && n.Items[i].MachineDeployment.Labels != nil {
-				iClusterID = key.ClusterID(n.Items[i].MachineDeployment)
+				iClusterName = key.ClusterID(n.Items[i].MachineDeployment)
 			}
 			if n.Items[j].MachineDeployment != nil && n.Items[j].MachineDeployment.Labels != nil {
-				jClusterID = key.ClusterID(n.Items[j].MachineDeployment)
+				jClusterName = key.ClusterID(n.Items[j].MachineDeployment)
 			}
 
-			return strings.Compare(iClusterID, jClusterID) > 0
+			return strings.Compare(iClusterName, jClusterName) > 0
 		})
 		for _, nodePool := range n.Items {
 			table.Rows = append(table.Rows, getAWSNodePoolRow(nodePool, capabilities))
@@ -64,7 +65,7 @@ func getAWSNodePoolRow(
 		Cells: []interface{}{
 			nodePool.MachineDeployment.GetName(),
 			key.ClusterID(nodePool.MachineDeployment),
-			nodePool.MachineDeployment.CreationTimestamp.UTC(),
+			output.TranslateTimestampSince(nodePool.MachineDeployment.CreationTimestamp),
 			getAWSLatestCondition(nodePool, capabilities),
 			getAWSAutoscaling(nodePool, capabilities),
 			nodePool.MachineDeployment.Status.Replicas,

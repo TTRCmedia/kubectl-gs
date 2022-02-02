@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	name  = "clusters <cluster-id>"
+	name  = "clusters <cluster-name>"
 	alias = "cluster"
 
 	shortDescription = "Display one or many clusters"
@@ -23,8 +23,8 @@ const (
 
 Output columns:
 
-- ID: Unique identifier of the cluster.
-- CREATED: Date and time of the Cluster CR creation.
+- NAME: Unique identifier of the cluster.
+- AGE: How long ago was the cluster created.
 - CONDITION: Latest condition reported for the cluster. Can be "CREATING", "CREATED", "UPDATING", "UPDATED", "DELETING".
 - RELEASE: Workload cluster release used by the cluster.
 - ORGANIZATION: Organization owning the cluster.
@@ -32,8 +32,8 @@ Output columns:
 
 	examples = `  # List all clusters you have access to
   kubectl gs get clusters
-  
-  # Get one specific cluster by its ID
+
+  # Get one specific cluster by its name
   kubectl gs get clusters f83ir`
 )
 

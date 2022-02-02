@@ -10,12 +10,13 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/giantswarm/kubectl-gs/cmd/get/appcatalogs"
 	"github.com/giantswarm/kubectl-gs/cmd/get/apps"
 	"github.com/giantswarm/kubectl-gs/cmd/get/capi"
+	"github.com/giantswarm/kubectl-gs/cmd/get/catalogs"
 	"github.com/giantswarm/kubectl-gs/cmd/get/clusters"
 	"github.com/giantswarm/kubectl-gs/cmd/get/nodepools"
 	"github.com/giantswarm/kubectl-gs/cmd/get/orgs"
+	"github.com/giantswarm/kubectl-gs/cmd/get/releases"
 )
 
 const (
@@ -70,9 +71,9 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
-	var appCatalogsCmd *cobra.Command
+	var catalogsCmd *cobra.Command
 	{
-		c := appcatalogs.Config{
+		c := catalogs.Config{
 			Logger:     config.Logger,
 			FileSystem: config.FileSystem,
 
@@ -82,7 +83,7 @@ func New(config Config) (*cobra.Command, error) {
 			Stdout: config.Stdout,
 		}
 
-		appCatalogsCmd, err = appcatalogs.New(c)
+		catalogsCmd, err = catalogs.New(c)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -138,6 +139,7 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+
 	var orgsCmd *cobra.Command
 	{
 		c := orgs.Config{
@@ -151,6 +153,24 @@ func New(config Config) (*cobra.Command, error) {
 		}
 
 		orgsCmd, err = orgs.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
+	var releasesCmd *cobra.Command
+	{
+		c := releases.Config{
+			Logger:     config.Logger,
+			FileSystem: config.FileSystem,
+
+			K8sConfigAccess: config.K8sConfigAccess,
+
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		releasesCmd, err = releases.New(c)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -175,11 +195,12 @@ func New(config Config) (*cobra.Command, error) {
 	f.Init(c)
 
 	c.AddCommand(appsCmd)
-	c.AddCommand(appCatalogsCmd)
+	c.AddCommand(catalogsCmd)
 	c.AddCommand(clusterApiCmd)
 	c.AddCommand(clustersCmd)
 	c.AddCommand(nodepoolsCmd)
 	c.AddCommand(orgsCmd)
+	c.AddCommand(releasesCmd)
 
 	return c, nil
 }

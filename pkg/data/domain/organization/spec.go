@@ -10,12 +10,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-type GetOptions struct {
-	Name string
+type Collection struct {
+	Items []Organization
 }
 
-type Interface interface {
-	Get(context.Context, GetOptions) (Resource, error)
+type GetOptions struct {
+	Name string
 }
 
 type Resource interface {
@@ -31,12 +31,11 @@ func (o *Organization) Object() runtime.Object {
 	return o.Organization
 }
 
-// Collection wraps a list of organizations.
-type Collection struct {
-	Items []Organization
+type Interface interface {
+	Get(context.Context, GetOptions) (Resource, error)
 }
 
-func (nc *Collection) Object() runtime.Object {
+func (c *Collection) Object() runtime.Object {
 	list := &metav1.List{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "List",
@@ -45,8 +44,12 @@ func (nc *Collection) Object() runtime.Object {
 		ListMeta: metav1.ListMeta{},
 	}
 
-	for _, item := range nc.Items {
+	for _, item := range c.Items {
 		obj := item.Object()
+		if obj == nil {
+			continue
+		}
+
 		raw := runtime.RawExtension{
 			Object: obj,
 		}
