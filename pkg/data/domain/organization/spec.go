@@ -10,8 +10,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// Organization gives access to the actual Organization resource.
+type Organization struct {
+	*securityv1alpha1.Organization
+}
+
 type Collection struct {
 	Items []Organization
+}
+
+type Interface interface {
+	Get(context.Context, GetOptions) (Resource, error)
 }
 
 type GetOptions struct {
@@ -22,17 +31,8 @@ type Resource interface {
 	Object() runtime.Object
 }
 
-// Organization gives access to the actual Organization resource.
-type Organization struct {
-	*securityv1alpha1.Organization
-}
-
 func (o *Organization) Object() runtime.Object {
 	return o.Organization
-}
-
-type Interface interface {
-	Get(context.Context, GetOptions) (Resource, error)
 }
 
 func (c *Collection) Object() runtime.Object {
