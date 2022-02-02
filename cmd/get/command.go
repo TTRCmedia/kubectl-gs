@@ -139,7 +139,6 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
-
 	var orgsCmd *cobra.Command
 	{
 		c := orgs.Config{

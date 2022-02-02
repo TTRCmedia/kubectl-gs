@@ -19,16 +19,16 @@ type Collection struct {
 	Items []Organization
 }
 
-type Interface interface {
-	Get(context.Context, GetOptions) (Resource, error)
-}
-
 type GetOptions struct {
 	Name string
 }
 
 type Resource interface {
 	Object() runtime.Object
+}
+
+type Interface interface {
+	Get(context.Context, GetOptions) (Resource, error)
 }
 
 func (o *Organization) Object() runtime.Object {
